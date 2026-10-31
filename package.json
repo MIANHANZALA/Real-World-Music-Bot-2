@@ -1,10 +1,14 @@
+
 {
   "name": "music",
   "version": "4.0.1",
-  "description": "A Discord bot with DisTube and slash commands.",
+  "description": "A Discord music bot powered by DisTube and Discord.js.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
+  },
+  "engines": {
+    "node": "24.x"
   },
   "dependencies": {
     "@discordjs/builders": "^1.8.2",
