@@ -98,6 +98,34 @@ if (!token) {
 
 console.log("Connecting to Discord Gateway...");
 
+client.on("debug", message => {
+    console.log("[DISCORD DEBUG]", message);
+});
+
+client.on("error", error => {
+    console.error("[DISCORD ERROR]", error);
+});
+
+client.on("shardError", error => {
+    console.error("[SHARD ERROR]", error);
+});
+
+client.on("shardDisconnect", (event, id) => {
+    console.error("[SHARD DISCONNECTED]", {
+        id,
+        code: event.code,
+        reason: event.reason
+    });
+});
+
+setTimeout(() => {
+    console.log("[30 SECOND CHECK]", {
+        ready: client.isReady(),
+        username: client.user?.tag || "Not connected",
+        websocketStatus: client.ws.status
+    });
+}, 30000);
+
 client.login(token)
     .then(() => {
         console.log("Discord login request completed.");
