@@ -2,9 +2,9 @@
   "name": "music",
   "version": "4.0.1",
   "description": "A Discord bot with DisTube and slash commands.",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "@discordjs/builders": "^1.8.2",
