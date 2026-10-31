@@ -13,15 +13,14 @@ class PlayerManager {
      
         this.messageDeleteTimeout = 10000;
         
-        this.distube = new DisTube(client, {
-          ...distubeOptions,
-          plugins: [
-            new YtDlpPlugin({
-              update: false, 
-              cookies: path.join(__dirname, '../config/cookies.txt'), 
-            }),
-          ],
-        });
+this.distube = new DisTube(client, {
+    ...distubeOptions,
+    plugins: [
+        new YtDlpPlugin({
+            update: true,
+        }),
+    ],
+});
         
         this.queue = new PlayerQueue();
         this.errorHandler = new PlayerErrorHandler();
