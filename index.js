@@ -376,74 +376,52 @@ client.once('ready', () => {
     clearTimeout(connectionWatchdog);
 });
 
-
 // ============================================
-// 11. CONNECT TO DISCORD
+// 11. CONNECT TO DISCORD - SINGLE LOGIN
 // ============================================
 
-console.log('[DISCORD] Starting connection...');
-
-// Run the API test independently.
-// An API test failure MUST NOT prevent bot login.
-// Discord REST diagnostics
-
+// Monitor Discord REST rate limits
 client.rest.on("rateLimited", info => {
-    console.error("[DISCORD REST RATE LIMITED]", {
+    console.error("[REST RATE LIMITED]", {
         route: info.route,
         method: info.method,
-        scope: info.scope,
         global: info.global,
-        retryAfterMs: info.retryAfter
+        retryAfter: info.retryAfter
     });
 });
 
 client.rest.on("invalidRequestWarning", info => {
-    console.error(
-        "[DISCORD INVALID REQUEST WARNING]",
-        info
-    );
+    console.error("[INVALID REQUEST WARNING]", info);
 });
 
-// Actual Discord connection
+// Start only ONE Discord login attempt
+console.log("[DISCORD] Starting single login attempt...");
 
-console.log("[DISCORD] Connecting...");
+const loginTimeout = setTimeout(() => {
+    console.error("[DISCORD] LOGIN IS TAKING TOO LONG", {
+        ready: client.isReady(),
+        websocketStatus: client.ws.status
+    });
+}, 45000);
+
+loginTimeout.unref();
 
 client.login(token)
     .then(() => {
-        console.log("[DISCORD] Login completed.");
+        clearTimeout(loginTimeout);
+
+        console.log("[DISCORD] Login promise resolved.");
+        console.log("[DISCORD] Waiting for READY event...");
     })
     .catch(error => {
-        console.error("[DISCORD LOGIN ERROR]", {
-            name: error.name,
-            message: error.message,
-            code: error.code,
-            status: error.status
-        });
+        clearTimeout(loginTimeout);
+
+        console.error("================================");
+        console.error("[DISCORD LOGIN FAILED]");
+        console.error("Name:", error.name);
+        console.error("Message:", error.message);
+        console.error("Code:", error.code);
+        console.error("Status:", error.status);
+        console.error("================================");
     });
 
-// Actual Discord authentication
-client.login(token)
-    .then(() => {
-
-        console.log(
-            '[DISCORD] Login request completed successfully.'
-        );
-
-        console.log(
-            '[DISCORD] Waiting for the ready event...'
-        );
-
-    })
-    .catch(error => {
-
-        console.error('================================');
-
-        console.error('[DISCORD LOGIN FAILED]');
-
-        console.error('ERROR NAME:', error.name);
-        console.error('ERROR MESSAGE:', error.message);
-        console.error('ERROR CODE:', error.code);
-
-        console.error('================================');
-
-    });
