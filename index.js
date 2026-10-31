@@ -385,8 +385,41 @@ console.log('[DISCORD] Starting connection...');
 
 // Run the API test independently.
 // An API test failure MUST NOT prevent bot login.
+// Discord REST diagnostics
 
-checkDiscordAPI();
+client.rest.on("rateLimited", info => {
+    console.error("[DISCORD REST RATE LIMITED]", {
+        route: info.route,
+        method: info.method,
+        scope: info.scope,
+        global: info.global,
+        retryAfterMs: info.retryAfter
+    });
+});
+
+client.rest.on("invalidRequestWarning", info => {
+    console.error(
+        "[DISCORD INVALID REQUEST WARNING]",
+        info
+    );
+});
+
+// Actual Discord connection
+
+console.log("[DISCORD] Connecting...");
+
+client.login(token)
+    .then(() => {
+        console.log("[DISCORD] Login completed.");
+    })
+    .catch(error => {
+        console.error("[DISCORD LOGIN ERROR]", {
+            name: error.name,
+            message: error.message,
+            code: error.code,
+            status: error.status
+        });
+    });
 
 // Actual Discord authentication
 client.login(token)
