@@ -6,7 +6,6 @@ const PlayerManager = require('./src/player/PlayerManager.js');
 const { printWatermark } = require('./src/config/type.js');
 const intents = [
   GatewayIntentBits.Guilds,
-  GatewayIntentBits.GuildMembers,
   GatewayIntentBits.GuildVoiceStates,
   GatewayIntentBits.GuildMessages
 ];
