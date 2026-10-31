@@ -1,171 +1,416 @@
-const { Client, GatewayIntentBits, Collection } = require('discord.js');
-const { distubeOptions } = require('./src/config/config.js');
+
+'use strict';
+
+// ============================================
+// 1. LOAD ENVIRONMENT VARIABLES
+// ============================================
+
+require('dotenv').config();
+
+const {
+    Client,
+    GatewayIntentBits,
+    Collection
+} = require('discord.js');
+
 const fs = require('fs');
 const path = require('path');
+const express = require('express');
+
+const { distubeOptions } = require('./src/config/config.js');
 const PlayerManager = require('./src/player/PlayerManager.js');
 const { printWatermark } = require('./src/config/type.js');
+
+
+// ============================================
+// 2. DISCORD BOT CONFIGURATION
+// ============================================
+
 const intents = [
-  GatewayIntentBits.Guilds,
-  GatewayIntentBits.GuildVoiceStates,
-  GatewayIntentBits.GuildMessages
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages
 ];
 
-const client = new Client({ intents });
+const client = new Client({
+    intents: intents
+});
+
 printWatermark();
+
 client.commands = new Collection();
-client.playerManager = new PlayerManager(client, distubeOptions);
+
+
+// ============================================
+// 3. INITIALIZE MUSIC PLAYER
+// ============================================
+
+console.log('[STARTUP] Initializing DisTube player...');
+
+client.playerManager = new PlayerManager(
+    client,
+    distubeOptions
+);
+
 client.playerManager.distube.setMaxListeners(20);
-const commandsPath = path.join(__dirname, './src/commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+console.log('[STARTUP] DisTube player initialized.');
+
+
+// ============================================
+// 4. LOAD BOT COMMANDS
+// ============================================
+
+console.log('[STARTUP] Loading commands...');
+
+const commandsPath = path.join(__dirname, 'src/commands');
+
+if (!fs.existsSync(commandsPath)) {
+    throw new Error('Commands directory not found: ' + commandsPath);
+}
+
+const commandFiles = fs.readdirSync(commandsPath)
+    .filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
-  const command = require(path.join(commandsPath, file));
-  client.commands.set(command.data.name, command);
+    try {
+        const filePath = path.join(commandsPath, file);
+        const command = require(filePath);
+
+        if (!command.data || !command.data.name) {
+            throw new Error('Command is missing data.name');
+        }
+
+        client.commands.set(command.data.name, command);
+
+        console.log(`[COMMAND] Loaded: ${command.data.name}`);
+
+    } catch (error) {
+        console.error(`[COMMAND ERROR] ${file}:`, error);
+        throw error;
+    }
 }
 
+console.log(`[STARTUP] Loaded ${client.commands.size} commands.`);
 
-const eventsPath = path.join(__dirname, './src/events');
-const eventFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
+
+// ============================================
+// 5. LOAD BOT EVENTS
+// ============================================
+
+console.log('[STARTUP] Loading events...');
+
+const eventsPath = path.join(__dirname, 'src/events');
+
+if (!fs.existsSync(eventsPath)) {
+    throw new Error('Events directory not found: ' + eventsPath);
+}
+
+const eventFiles = fs.readdirSync(eventsPath)
+    .filter(file => file.endsWith('.js'));
 
 for (const file of eventFiles) {
-  const filePath = path.join(eventsPath, file);
-  const event = require(filePath);
-  if (event.once) {
-    client.once(event.name, (...args) => event.execute(...args, client));
-  } else {
-    client.on(event.name, (...args) => event.execute(...args, client));
-  }
+    try {
+        const filePath = path.join(eventsPath, file);
+        const event = require(filePath);
+
+        if (!event.name || typeof event.execute !== 'function') {
+            throw new Error('Invalid event file: ' + file);
+        }
+
+        const listener = (...args) => {
+            try {
+                const result = event.execute(...args, client);
+
+                if (result && typeof result.catch === 'function') {
+                    result.catch(error => {
+                        console.error(
+                            `[EVENT ERROR] ${event.name}:`,
+                            error
+                        );
+                    });
+                }
+
+            } catch (error) {
+                console.error(
+                    `[EVENT ERROR] ${event.name}:`,
+                    error
+                );
+            }
+        };
+
+        if (event.once) {
+            client.once(event.name, listener);
+        } else {
+            client.on(event.name, listener);
+        }
+
+        console.log(`[EVENT] Loaded: ${event.name}`);
+
+    } catch (error) {
+        console.error(`[EVENT LOAD ERROR] ${file}:`, error);
+        throw error;
+    }
 }
 
+console.log(`[STARTUP] Loaded ${eventFiles.length} events.`);
 
-const express = require("express");
+
+// ============================================
+// 6. EXPRESS SERVER FOR RENDER
+// ============================================
+
 const app = express();
 
-const port = process.env.PORT || 10000;
+const PORT = Number(process.env.PORT) || 10000;
 
 app.get('/', (req, res) => {
     const imagePath = path.join(__dirname, 'index.html');
-    res.sendFile(imagePath);
+
+    res.sendFile(imagePath, error => {
+        if (error) {
+            console.error('[WEB SERVER] Failed to send index.html:', error);
+
+            if (!res.headersSent) {
+                res.status(500).send('Music bot server is running.');
+            }
+        }
+    });
 });
 
-app.listen(port, "0.0.0.0", () => {
-    console.log(`Web server running on port ${port}`);
+app.get('/healthz', (req, res) => {
+    res.status(200).json({
+        status: 'running',
+        discord: client.isReady() ? 'connected' : 'disconnected'
+    });
+});
+
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log('================================');
+    console.log('[WEB SERVER] Running successfully.');
+    console.log(`[WEB SERVER] Port: ${PORT}`);
+    console.log('================================');
+});
+
+server.on('error', error => {
+    console.error('[WEB SERVER ERROR]:', error);
 });
 
 
-// Discord connection diagnostics
+// ============================================
+// 7. DISCORD CONNECTION EVENTS
+// ============================================
 
-const token = process.env.TOKEN?.trim();
+client.once('ready', () => {
+    console.log('');
+    console.log('================================');
+    console.log('       DISCORD BOT ONLINE');
+    console.log('================================');
 
-console.log("Discord token available:", Boolean(token));
+    console.log('BOT NAME:', client.user.tag);
+    console.log('BOT ID:', client.user.id);
+    console.log('SERVERS:', client.guilds.cache.size);
+    console.log('STATUS: CONNECTED');
 
-client.once("ready", () => {
-    console.log("================================");
-    console.log("✅ DISCORD BOT IS ONLINE");
-    console.log("Bot:", client.user.tag);
-    console.log("Bot ID:", client.user.id);
-    console.log("Servers:", client.guilds.cache.size);
-    console.log("================================");
+    console.log('================================');
+    console.log('');
 });
 
-client.on("shardReady", shardId => {
-    console.log(`✅ Discord Gateway connected. Shard: ${shardId}`);
+client.on('error', error => {
+    console.error('[DISCORD CLIENT ERROR]:', error);
 });
 
-client.on("shardError", (error, shardId) => {
-    console.error(`❌ Gateway error on shard ${shardId}:`, error);
+client.on('warn', warning => {
+    console.warn('[DISCORD WARNING]:', warning);
 });
 
-client.on("shardDisconnect", (event, shardId) => {
-    console.error(
-        `❌ Gateway disconnected. Shard: ${shardId}, Code: ${event.code}`
+client.on('shardReady', shardId => {
+    console.log(`[DISCORD] Gateway connected. Shard: ${shardId}`);
+});
+
+client.on('shardReconnecting', shardId => {
+    console.warn(`[DISCORD] Reconnecting shard: ${shardId}`);
+});
+
+client.on('shardResume', (shardId, replayedEvents) => {
+    console.log(
+        `[DISCORD] Shard ${shardId} resumed. Replayed events: ${replayedEvents}`
     );
 });
 
-client.on("error", error => {
-    console.error("❌ Discord client error:", error);
+client.on('shardError', (error, shardId) => {
+    console.error(`[DISCORD] Shard ${shardId} error:`, error);
 });
 
-client.on("warn", warning => {
-    console.warn("Discord warning:", warning);
-});
-
-if (!token) {
-    console.error("❌ TOKEN is missing from Render Environment!");
-    process.exit(1);
-}
-
-console.log("Connecting to Discord Gateway...");
-
-client.on("debug", message => {
-    console.log("[DISCORD DEBUG]", message);
-});
-
-client.on("error", error => {
-    console.error("[DISCORD ERROR]", error);
-});
-
-client.on("shardError", error => {
-    console.error("[SHARD ERROR]", error);
-});
-
-client.on("shardDisconnect", (event, id) => {
-    console.error("[SHARD DISCONNECTED]", {
-        id,
+client.on('shardDisconnect', (event, shardId) => {
+    console.error('[DISCORD] Gateway disconnected:', {
+        shardId: shardId,
         code: event.code,
-        reason: event.reason
+        reason: String(event.reason || '')
     });
 });
 
-setTimeout(() => {
-    console.log("[30 SECOND CHECK]", {
-        ready: client.isReady(),
-        username: client.user?.tag || "Not connected",
-        websocketStatus: client.ws.status
-    });
-}, 30000);
 
-async function connectDiscord() {
-    // Test Discord's public Gateway API first
+// ============================================
+// 8. DISCORD API CONNECTIVITY TEST
+// ============================================
+
+async function checkDiscordAPI() {
+
+    console.log('[API TEST] Checking Discord API...');
+
     try {
-        console.log("[TEST 1] Checking Discord API...");
 
         const response = await fetch(
-            "https://discord.com/api/v10/gateway",
-            { signal: AbortSignal.timeout(15000) }
+            'https://discord.com/api/v10/gateway',
+            {
+                signal: AbortSignal.timeout(15000)
+            }
         );
 
-        const data = await response.json();
+        const body = await response.text();
 
-        console.log("[TEST 1] HTTP STATUS:", response.status);
+        console.log('[API TEST] HTTP STATUS:', response.status);
 
-        if (!response.ok) {
-            console.error("[TEST 1] Discord API response:", data);
-            return;
+        console.log(
+            '[API TEST] CONTENT TYPE:',
+            response.headers.get('content-type')
+        );
+
+        console.log('[API TEST] RESPONSE URL:', response.url);
+
+        if (response.ok) {
+
+            try {
+
+                const data = JSON.parse(body);
+
+                console.log('[API TEST] Discord API accessible.');
+                console.log('[API TEST] Gateway URL:', data.url);
+                console.log('[API TEST] Recommended shards:', data.shards);
+
+            } catch (error) {
+
+                console.error(
+                    '[API TEST] Response was not valid JSON.'
+                );
+
+                console.error(
+                    '[API TEST] RESPONSE PREVIEW:',
+                    body.slice(0, 300).replace(/\s+/g, ' ')
+                );
+            }
+
+        } else {
+
+            console.error(
+                '[API TEST] Discord returned an unsuccessful response.'
+            );
+
+            console.error(
+                '[API TEST] RESPONSE PREVIEW:',
+                body.slice(0, 300).replace(/\s+/g, ' ')
+            );
         }
 
-        console.log("[TEST 1] Gateway URL:", data.url);
-        console.log("[TEST 1] Recommended shards:", data.shards);
-
     } catch (error) {
-        console.error("[TEST 1] CONNECTION FAILED:", {
+
+        console.error('[API TEST] CONNECTION FAILED:', {
             name: error.name,
             message: error.message,
             code: error.cause?.code
         });
 
-        return;
     }
 
-    // If Discord API is reachable, attempt bot login
-    console.log("[TEST 2] Connecting bot to Discord...");
-
-    try {
-        await client.login(token);
-        console.log("[TEST 2] Login request completed.");
-    } catch (error) {
-        console.error("[TEST 2] LOGIN FAILED:", error);
-    }
 }
 
-connectDiscord();
+
+// ============================================
+// 9. DISCORD TOKEN VALIDATION
+// ============================================
+
+const token = process.env.TOKEN?.trim();
+
+if (!token) {
+
+    console.error('================================');
+    console.error('[FATAL] DISCORD TOKEN IS MISSING!');
+    console.error('================================');
+
+    process.exit(1);
+}
+
+console.log('[DISCORD] Token environment variable detected.');
+
+
+// ============================================
+// 10. CONNECTION WATCHDOG
+// ============================================
+
+const connectionWatchdog = setTimeout(() => {
+
+    if (!client.isReady()) {
+
+        console.error('================================');
+
+        console.error('[DISCORD] BOT NOT READY AFTER 30 SECONDS.');
+
+        console.error(
+            '[DISCORD] WebSocket status:',
+            client.ws.status
+        );
+
+        console.error('[DISCORD] Check Gateway and API errors above.');
+
+        console.error('================================');
+
+    }
+
+}, 30000);
+
+connectionWatchdog.unref();
+
+client.once('ready', () => {
+    clearTimeout(connectionWatchdog);
+});
+
+
+// ============================================
+// 11. CONNECT TO DISCORD
+// ============================================
+
+console.log('[DISCORD] Starting connection...');
+
+// Run the API test independently.
+// An API test failure MUST NOT prevent bot login.
+
+checkDiscordAPI();
+
+// Actual Discord authentication
+client.login(token)
+    .then(() => {
+
+        console.log(
+            '[DISCORD] Login request completed successfully.'
+        );
+
+        console.log(
+            '[DISCORD] Waiting for the ready event...'
+        );
+
+    })
+    .catch(error => {
+
+        console.error('================================');
+
+        console.error('[DISCORD LOGIN FAILED]');
+
+        console.error('ERROR NAME:', error.name);
+        console.error('ERROR MESSAGE:', error.message);
+        console.error('ERROR CODE:', error.code);
+
+        console.error('================================');
+
+    });
