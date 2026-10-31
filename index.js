@@ -41,14 +41,68 @@ for (const file of eventFiles) {
 
 const express = require("express");
 const app = express();
-const port = 3000;
+
+const port = process.env.PORT || 10000;
+
 app.get('/', (req, res) => {
     const imagePath = path.join(__dirname, 'index.html');
     res.sendFile(imagePath);
 });
-app.listen(port, () => {
-    console.log(`🔗 Listening to GlaceYT : http://localhost:${port}`);
+
+app.listen(port, "0.0.0.0", () => {
+    console.log(`Web server running on port ${port}`);
 });
 
 
-client.login(process.env.TOKEN);
+// Discord connection diagnostics
+
+const token = process.env.TOKEN?.trim();
+
+console.log("Discord token available:", Boolean(token));
+
+client.once("ready", () => {
+    console.log("================================");
+    console.log("✅ DISCORD BOT IS ONLINE");
+    console.log("Bot:", client.user.tag);
+    console.log("Bot ID:", client.user.id);
+    console.log("Servers:", client.guilds.cache.size);
+    console.log("================================");
+});
+
+client.on("shardReady", shardId => {
+    console.log(`✅ Discord Gateway connected. Shard: ${shardId}`);
+});
+
+client.on("shardError", (error, shardId) => {
+    console.error(`❌ Gateway error on shard ${shardId}:`, error);
+});
+
+client.on("shardDisconnect", (event, shardId) => {
+    console.error(
+        `❌ Gateway disconnected. Shard: ${shardId}, Code: ${event.code}`
+    );
+});
+
+client.on("error", error => {
+    console.error("❌ Discord client error:", error);
+});
+
+client.on("warn", warning => {
+    console.warn("Discord warning:", warning);
+});
+
+if (!token) {
+    console.error("❌ TOKEN is missing from Render Environment!");
+    process.exit(1);
+}
+
+console.log("Connecting to Discord Gateway...");
+
+client.login(token)
+    .then(() => {
+        console.log("Discord login request completed.");
+    })
+    .catch(error => {
+        console.error("❌ DISCORD LOGIN FAILED:", error);
+        process.exit(1);
+    });
