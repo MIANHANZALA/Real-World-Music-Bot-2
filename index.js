@@ -125,11 +125,47 @@ setTimeout(() => {
     });
 }, 30000);
 
-client.login(token)
-    .then(() => {
-        console.log("Discord login request completed.");
-    })
-    .catch(error => {
-        console.error("❌ DISCORD LOGIN FAILED:", error);
-        process.exit(1);
-    });
+async function connectDiscord() {
+    // Test Discord's public Gateway API first
+    try {
+        console.log("[TEST 1] Checking Discord API...");
+
+        const response = await fetch(
+            "https://discord.com/api/v10/gateway",
+            { signal: AbortSignal.timeout(15000) }
+        );
+
+        const data = await response.json();
+
+        console.log("[TEST 1] HTTP STATUS:", response.status);
+
+        if (!response.ok) {
+            console.error("[TEST 1] Discord API response:", data);
+            return;
+        }
+
+        console.log("[TEST 1] Gateway URL:", data.url);
+        console.log("[TEST 1] Recommended shards:", data.shards);
+
+    } catch (error) {
+        console.error("[TEST 1] CONNECTION FAILED:", {
+            name: error.name,
+            message: error.message,
+            code: error.cause?.code
+        });
+
+        return;
+    }
+
+    // If Discord API is reachable, attempt bot login
+    console.log("[TEST 2] Connecting bot to Discord...");
+
+    try {
+        await client.login(token);
+        console.log("[TEST 2] Login request completed.");
+    } catch (error) {
+        console.error("[TEST 2] LOGIN FAILED:", error);
+    }
+}
+
+connectDiscord();
